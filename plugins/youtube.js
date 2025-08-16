@@ -211,33 +211,35 @@ Function({
   desc: 'Download and send a video from YouTube',
   type: 'download'
 }, async (message, match, client) => {
-  match = match || message.reply_message.text;
+  match = match || message.reply_message?.text;
   if (!match) return message.reply('Please provide a YouTube video URL or search query.');
-  if (isUrl(match) && match.includes('youtu')) {
-    const id = ytIdRegex.exec(match);
-    try {
-      const result = await video(id[1]);
-      if (!result) return await message.reply('Failed to download video.');
-      return await message.send(result.file, 'video', { quoted: message.data, caption: result.title });
-    } catch (error) {
-      return await message.send('```' + error.message + '```');
-    }
+
+  let url = match;
+
+  // If input is NOT a YouTube URL → search first
+  if (!isUrl(match) || !match.includes('youtu')) {
+    const search = await yts(match);
+    if (search.all.length < 1) return await message.reply('No results found.');
+    url = search.videos[0].url; // take first video
   }
 
-  const search = await yts(match);
-  if (search.all.length < 1) return await message.reply('No results found.');
+  // Download using dreaded API
+  try {
+    const apiUrl = `https://api.dreaded.site/api/ytdl/video?url=${encodeURIComponent(url)}`;
+    const { data } = await axios.get(apiUrl);
 
-  const buttons = search.all.filter(result => result.type === 'video').map((result, index) => ({
-    type: 'list',
-    title: result.title,
-    id: `${prefix}video ${result.url}`,
-  }));
+    if (!data || !data.result || !data.result.url) {
+      return await message.reply('Failed to download video.');
+    }
 
-  await client.interactiveMessage(message.jid, {
-    title: search.videos[0].title,
-    text: `And ${search.all.length - 1} more results...`,
-    buttons: buttons
-  });
+    return await message.send(
+      { url: data.result.url }, 
+      'video',
+      { quoted: message.data, caption: data.result.title || 'YouTube Video' }
+    );
+  } catch (error) {
+    return await message.send('```' + error.message + '```');
+  }
 });
 
 Function({
@@ -374,4 +376,5 @@ Function({
     } catch (error) {
         return await message.send('```' + error.message + '```');
     }
+
 });
